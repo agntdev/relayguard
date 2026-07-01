@@ -1,7 +1,13 @@
 import { Composer } from "grammy";
 import type { Ctx } from "../bot.js";
 import { now } from "../clock.js";
-import { saveAttachedGroup, getAttachedGroup, clearAttachedGroup } from "../store.js";
+import {
+  saveAttachedGroup,
+  getAttachedGroup,
+  clearAttachedGroup,
+  lockAttachmentWithRetry,
+  unlockAttachment,
+} from "../store.js";
 import { isAdmin } from "../permissions.js";
 
 // ---------------------------------------------------------------------------
@@ -23,19 +29,33 @@ composer.command("attach", async (ctx) => {
     return;
   }
 
-  // Check if a different group is already attached
-  const existing = await getAttachedGroup();
-  if (existing && existing.groupId !== chat.id) {
-    await ctx.reply("⚠️ Another group is already attached as the moderation group. Detach it first with /detach.");
+  // Acquire distributed lock to prevent TOCTOU race when multiple admins
+  // try to attach different groups simultaneously.
+  const ownerId = `admin:${ctx.from!.id}:${chat.id}`;
+  const gotLock = await lockAttachmentWithRetry(ownerId);
+  if (!gotLock) {
+    await ctx.reply("⚠️ Another attach/detach operation is in progress. Try again shortly.");
     return;
   }
 
-  await saveAttachedGroup({
-    groupId: chat.id,
-    lastAttachedTimestamp: now(),
-  });
+  try {
+    const existing = await getAttachedGroup();
+    if (existing && existing.groupId !== chat.id) {
+      await ctx.reply(
+        "⚠️ Another group is already attached as the moderation group. Detach it first with /detach.",
+      );
+      return;
+    }
 
-  await ctx.reply("✓ This group is now set as the moderation group. Reports will be forwarded here.");
+    await saveAttachedGroup({
+      groupId: chat.id,
+      lastAttachedTimestamp: now(),
+    });
+
+    await ctx.reply("✓ This group is now set as the moderation group. Reports will be forwarded here.");
+  } finally {
+    await unlockAttachment();
+  }
 });
 
 // --- /detach ---
@@ -51,14 +71,26 @@ composer.command("detach", async (ctx) => {
     return;
   }
 
-  const existing = await getAttachedGroup();
-  if (!existing || existing.groupId !== chat.id) {
-    await ctx.reply("⚠️ This group is not currently set as the moderation group.");
+  // Acquire distributed lock for consistency with /attach
+  const ownerId = `admin:${ctx.from!.id}:${chat.id}`;
+  const gotLock = await lockAttachmentWithRetry(ownerId);
+  if (!gotLock) {
+    await ctx.reply("⚠️ Another attach/detach operation is in progress. Try again shortly.");
     return;
   }
 
-  await clearAttachedGroup();
-  await ctx.reply("✓ This group has been detached. Reports will no longer be forwarded here.");
+  try {
+    const existing = await getAttachedGroup();
+    if (!existing || existing.groupId !== chat.id) {
+      await ctx.reply("⚠️ This group is not currently set as the moderation group.");
+      return;
+    }
+
+    await clearAttachedGroup();
+    await ctx.reply("✓ This group has been detached. Reports will no longer be forwarded here.");
+  } finally {
+    await unlockAttachment();
+  }
 });
 
 export default composer;

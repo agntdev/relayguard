@@ -20,6 +20,11 @@ class TestKv {
     this.m.delete(key);
     return Promise.resolve();
   }
+  setnx(key: string, value: string): Promise<boolean> {
+    if (this.m.has(key)) return Promise.resolve(false);
+    this.m.set(key, value);
+    return Promise.resolve(true);
+  }
   /** Reset all stored data. */
   clear(): void {
     this.m.clear();

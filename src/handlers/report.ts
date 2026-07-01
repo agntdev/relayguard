@@ -74,24 +74,35 @@ composer.callbackQuery("submit_report:cancel", async (ctx) => {
   });
 });
 
+// --- /cancel command (power-user shortcut during the report flow) ---
+composer.command("cancel", async (ctx) => {
+  if (ctx.session.step === "awaiting_report") {
+    ctx.session.step = "idle";
+    await ctx.reply("Report cancelled. Tap /start to open the menu.", {
+      reply_markup: backMenuKeyboard,
+    });
+  }
+});
+
 // --- Step 2: User types their report ---
 // Use filter() so we only match when in the report flow — otherwise pass
 // through so /start, /help and other handlers still work.
 composer.filter(
   (ctx) => ctx.session.step === "awaiting_report",
-  async (ctx) => {
-    const content = ctx.message?.text?.trim();
-    if (!content) {
-      await ctx.reply("Your report was empty — please try again with a description.");
+  async (ctx, next) => {
+    // If the user typed a slash command during the flow, reset to idle and
+    // pass through so /start, /help, etc. still work.
+    if (ctx.message?.text?.startsWith("/")) {
+      ctx.session.step = "idle";
+      await next();
       return;
     }
 
-    ctx.session.step = "idle";
-
+    // Extract content: use text if present, otherwise caption (for media messages)
+    const content = ctx.message?.text?.trim() || ctx.message?.caption?.trim() || "";
     // Collect media references
     const mediaRefs: string[] = [];
     if (ctx.message?.photo) {
-      // photo array: last element is the largest size
       mediaRefs.push(`photo:${ctx.message.photo[ctx.message.photo.length - 1].file_id}`);
     }
     if (ctx.message?.document) {
@@ -100,6 +111,15 @@ composer.filter(
     if (ctx.message?.video) {
       mediaRefs.push(`video:${ctx.message.video.file_id}`);
     }
+
+    // Accept the report if there's content OR media — media-only with no
+    // caption is still valid (e.g. a photo of a bug).
+    if (!content && mediaRefs.length === 0) {
+      await ctx.reply("Your report was empty — please try again with a description or photo.");
+      return;
+    }
+
+    ctx.session.step = "idle";
 
     // Save the report
     const reportId = await nextReportId();

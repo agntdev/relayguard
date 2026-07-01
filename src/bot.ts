@@ -47,7 +47,12 @@ export async function buildBot(token: string) {
     bot.use(mod.default);
   }
 
-  bot.on("message", (ctx) => ctx.reply("Sorry, I didn't understand that. Try /help."));
+  bot.on("message", (ctx) => {
+    // Only reply in private chats — never reply in groups to avoid noise.
+    if (ctx.chat?.type === "private") {
+      return ctx.reply("Sorry, I didn't understand that. Try /help.");
+    }
+  });
 
   return bot;
 }
