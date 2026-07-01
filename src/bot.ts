@@ -10,6 +10,9 @@ export type FlowStep = "idle" | "awaiting_report";
 export interface Session {
   /** Current step in a multi-step flow. "idle" = no active flow. */
   step?: FlowStep;
+  /** Unix-ms timestamp of when the current flow step was entered. Used for flow
+   *  timeout detection — compared against the injectable now() seam. */
+  flowStartAt?: number;
 }
 
 export type Ctx = BotContext<Session>;

@@ -1,0 +1,13 @@
+[
+  {
+    "name": "message in private chat passes through group-reply handler",
+    "steps": [
+      {
+        "send": { "text": "/help" },
+        "expect": [
+          { "method": "sendMessage", "payload": { "text": "ℹ️ This bot lets you submit reports and feedback to the moderation team.\n\nTap /start to open the menu and select \"Submit Report\" to get started." } }
+        ]
+      }
+    ]
+  }
+]

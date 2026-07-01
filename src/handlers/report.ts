@@ -29,18 +29,16 @@ const backMenuKeyboard = inlineKeyboard([[inlineButton("⬅️ Back to menu", "m
 // If the user left the report flow halfway, expire their session on next interaction.
 composer.use(async (ctx, next) => {
   if (ctx.session.step === "awaiting_report") {
-    const msgTs = ctx.message?.date;
-    if (msgTs) {
-      // ctx.message.date is Unix seconds; now() returns ms
-      if (now() - msgTs * 1000 > FLOW_TIMEOUT_MS) {
-        ctx.session.step = "idle";
-        try {
-          await ctx.reply("⏱️ Report submission timed out. Tap /start to try again.");
-        } catch {
-          // May fail on callback queries — that's OK, timeout is best-effort
-        }
-        return;
+    const flowStartAt = ctx.session.flowStartAt;
+    if (flowStartAt && now() - flowStartAt > FLOW_TIMEOUT_MS) {
+      ctx.session.step = "idle";
+      ctx.session.flowStartAt = undefined;
+      try {
+        await ctx.reply("⏱️ Report submission timed out. Tap /start to try again.");
+      } catch {
+        // May fail on callback queries — that's OK, timeout is best-effort
       }
+      return;
     }
   }
   await next();
@@ -60,6 +58,7 @@ composer.callbackQuery("submit_report:start", async (ctx) => {
   }
 
   ctx.session.step = "awaiting_report";
+  ctx.session.flowStartAt = now();
   await ctx.editMessageText("📝 Please describe your issue or feedback below.", {
     reply_markup: cancelKeyboard,
   });
@@ -69,6 +68,7 @@ composer.callbackQuery("submit_report:start", async (ctx) => {
 composer.callbackQuery("submit_report:cancel", async (ctx) => {
   await ctx.answerCallbackQuery();
   ctx.session.step = "idle";
+  ctx.session.flowStartAt = undefined;
   await ctx.editMessageText("Report cancelled. Tap /start to open the menu.", {
     reply_markup: backMenuKeyboard,
   });
@@ -78,6 +78,7 @@ composer.callbackQuery("submit_report:cancel", async (ctx) => {
 composer.command("cancel", async (ctx) => {
   if (ctx.session.step === "awaiting_report") {
     ctx.session.step = "idle";
+    ctx.session.flowStartAt = undefined;
     await ctx.reply("Report cancelled. Tap /start to open the menu.", {
       reply_markup: backMenuKeyboard,
     });
@@ -94,6 +95,7 @@ composer.filter(
     // pass through so /start, /help, etc. still work.
     if (ctx.message?.text?.startsWith("/")) {
       ctx.session.step = "idle";
+      ctx.session.flowStartAt = undefined;
       await next();
       return;
     }
@@ -120,8 +122,7 @@ composer.filter(
     }
 
     ctx.session.step = "idle";
-
-    // Save the report
+    ctx.session.flowStartAt = undefined;
     const reportId = await nextReportId();
     const report = {
       id: reportId,
@@ -166,11 +167,33 @@ composer.filter(
     // Forward to moderator group
     // Show user ID as plain text (not clickable link) per privacy spec
     const forwardText =
-      `New report #${reportId} from user ${ctx.from!.id}:\n\n${content}` +
-      (mediaCount > 0 ? "\n\n(Report includes media attachments)" : "");
+      `New report #${reportId} from user ${ctx.from!.id}:\n\n${content}`;
 
     try {
       const sent = await ctx.api.sendMessage(group.groupId, forwardText);
+
+      // Forward any media attachments after the text message so mods can review them
+      for (const ref of mediaRefs) {
+        try {
+          const [type, fileId] = ref.split(":", 2) as [string, string];
+          if (type === "photo") {
+            await ctx.api.sendPhoto(group.groupId, fileId, {
+              caption: content ? undefined : "(attachment to report above)",
+            });
+          } else if (type === "doc") {
+            await ctx.api.sendDocument(group.groupId, fileId, {
+              caption: content ? undefined : "(attachment to report above)",
+            });
+          } else if (type === "video") {
+            await ctx.api.sendVideo(group.groupId, fileId, {
+              caption: content ? undefined : "(attachment to report above)",
+            });
+          }
+        } catch {
+          // Individual media send failure is non-fatal — the text alert already
+          // arrived. Logged in the catch boundary.
+        }
+      }
       await saveReplyMapping({
         groupMessageId: sent.message_id,
         originalReportId: reportId,
