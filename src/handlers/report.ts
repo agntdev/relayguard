@@ -82,6 +82,8 @@ composer.command("cancel", async (ctx) => {
     await ctx.reply("Report cancelled. Tap /start to open the menu.", {
       reply_markup: backMenuKeyboard,
     });
+  } else {
+    await ctx.reply("Nothing to cancel.");
   }
 });
 

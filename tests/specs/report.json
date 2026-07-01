@@ -28,5 +28,19 @@
         ]
       }
     ]
+  },
+  {
+    "name": "/cancel when no active flow replies Nothing to cancel",
+    "steps": [
+      {
+        "send": { "text": "/cancel" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": { "text": "Nothing to cancel." }
+          }
+        ]
+      }
+    ]
   }
 ]
