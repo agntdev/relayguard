@@ -11,16 +11,41 @@ import {
 import { isAdmin } from "../permissions.js";
 
 // ---------------------------------------------------------------------------
-// Group attachment / detachment — admin-only commands
+// Group attachment — owner-only via OWNER_ID env var / detachment — admin-only
 // ---------------------------------------------------------------------------
 
 const composer = new Composer<Ctx>();
 
-// --- /attach ---
+/** Parse OWNER_ID from env — returns null if unset or not a number. */
+function getOwnerId(): number | null {
+  const raw = process.env.OWNER_ID;
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function logDenied(cmd: string, ctx: Ctx, reason: string): void {
+  console.warn(`[admin] DENIED ${cmd}: user ${ctx.from?.id ?? "?"} in chat ${ctx.chat?.id ?? "?"} — ${reason}`);
+}
+
+// --- /attach (owner-only) ---
 composer.command("attach", async (ctx) => {
+  const ownerId = getOwnerId();
+  if (!ownerId) {
+    logDenied("/attach", ctx, "OWNER_ID not configured");
+    await ctx.reply("⚠️ /attach is not available — no owner configured. Set OWNER_ID in the environment.");
+    return;
+  }
+
+  if (ctx.from?.id !== ownerId) {
+    logDenied("/attach", ctx, "sender is not the owner");
+    await ctx.reply("⚠️ You don't have permission to use this command.");
+    return;
+  }
+
   const chat = ctx.chat;
   if (!chat || chat.type === "private") {
-    await ctx.reply("⚠️ /attach must be used in a group where you're an admin.");
+    await ctx.reply("⚠️ /attach must be used in a group.");
     return;
   }
 
@@ -31,8 +56,8 @@ composer.command("attach", async (ctx) => {
 
   // Acquire distributed lock to prevent TOCTOU race when multiple admins
   // try to attach different groups simultaneously.
-  const ownerId = `admin:${ctx.from!.id}:${chat.id}`;
-  const gotLock = await lockAttachmentWithRetry(ownerId);
+  const ownerIdStr = `owner:${ctx.from!.id}:${chat.id}`;
+  const gotLock = await lockAttachmentWithRetry(ownerIdStr);
   if (!gotLock) {
     await ctx.reply("⚠️ Another attach/detach operation is in progress. Try again shortly.");
     return;

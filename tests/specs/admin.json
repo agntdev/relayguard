@@ -1,13 +1,13 @@
 [
   {
-    "name": "/attach fails in private chat",
+    "name": "/attach fails: OWNER_ID not configured",
     "steps": [
       {
         "send": { "text": "/attach" },
         "expect": [
           {
             "method": "sendMessage",
-            "payload": { "text": "⚠️ /attach must be used in a group where you're an admin." }
+            "payload": { "text": "⚠️ /attach is not available — no owner configured. Set OWNER_ID in the environment." }
           }
         ]
       }
