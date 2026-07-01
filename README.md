@@ -1,0 +1,7 @@
+# RelayGuard
+
+Telegram bot that triages user reports, forwards AI-flagged reports to a single moderator group, and relays moderator replies back to reporters.
+
+Spec: [`docs/blueprint.md`](docs/blueprint.md).
+
+Built on [agnt-gm.ai](https://agnt-gm.ai). The whole bot is built and refined here as pull requests across successive build passes.
