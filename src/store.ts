@@ -35,12 +35,27 @@ export interface KvStore {
    * Used for distributed locking.
    */
   setnx(key: string, value: string): Promise<boolean>;
+  /**
+   * Set a TTL (in milliseconds) on an existing key. No-op if the key does not
+   * exist. Used to auto-expire locks so a crash between acquire and release
+   * doesn't leave a permanent stale lock.
+   */
+  expire(key: string, ttlMs: number): Promise<void>;
 }
 
 /** In-memory fallback (dev / no Redis). */
 class MemoryKv implements KvStore {
   private readonly m = new Map<string, string>();
+  /** Approximate per-key expiry (ms). Checked on get(). */
+  private readonly exp = new Map<string, number>();
+
   async get(key: string): Promise<string | null> {
+    const ttl = this.exp.get(key);
+    if (ttl !== undefined && Date.now() > ttl) {
+      this.m.delete(key);
+      this.exp.delete(key);
+      return null;
+    }
     return this.m.get(key) ?? null;
   }
   async set(key: string, value: string): Promise<void> {
@@ -48,11 +63,17 @@ class MemoryKv implements KvStore {
   }
   async del(key: string): Promise<void> {
     this.m.delete(key);
+    this.exp.delete(key);
   }
   async setnx(key: string, value: string): Promise<boolean> {
     if (this.m.has(key)) return false;
     this.m.set(key, value);
     return true;
+  }
+  async expire(key: string, ttlMs: number): Promise<void> {
+    if (this.m.has(key)) {
+      this.exp.set(key, Date.now() + ttlMs);
+    }
   }
 }
 
@@ -70,7 +91,7 @@ function createRedisKv(url: string): KvStore {
   const require = createRequire(import.meta.url);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ioredis: any = require("ioredis");
-  const Redis = (ioredis.default ?? ioredis.Redis ?? ioredis) as new (...a: unknown[]) => { get: Function; set: Function; del: Function; setnx: Function };
+  const Redis = (ioredis.default ?? ioredis.Redis ?? ioredis) as new (...a: unknown[]) => { get: Function; set: Function; del: Function; setnx: Function; pexpire: Function };
   const client = new Redis(url, { maxRetriesPerRequest: null, lazyConnect: false });
   return {
     async get(key: string): Promise<string | null> {
@@ -86,6 +107,9 @@ function createRedisKv(url: string): KvStore {
     async setnx(key: string, value: string): Promise<boolean> {
       const result = await client.setnx(key, value);
       return result === 1;
+    },
+    async expire(key: string, ttlMs: number): Promise<void> {
+      await client.pexpire(key, ttlMs);
     },
   };
 }
@@ -160,11 +184,20 @@ const ATTACHMENT_LOCK_KEY = "lock:group_attachment";
 const LOCK_TTL_MS = 10_000; // 10 seconds — ample for a single KV write
 
 /**
- * Try to acquire the group-attachment lock atomically.
+ * Try to acquire the group-attachment lock atomically with an expiry TTL.
+ * If the bot crashes between acquire and release, the lock auto-expires
+ * after LOCK_TTL_MS and subsequent /attach and /detach operations will work.
  * Returns true if acquired, false if held by another caller.
  */
 export async function lockAttachment(ownerId: string): Promise<boolean> {
-  return kv().setnx(ATTACHMENT_LOCK_KEY, ownerId);
+  const acquired = await kv().setnx(ATTACHMENT_LOCK_KEY, ownerId);
+  if (acquired) {
+    // Set TTL so a crash between acquire and release doesn't leave a
+    // permanent stale lock. Best-effort: if expire fails, the lock lives
+    // only for LOCK_TTL_MS from this moment.
+    await kv().expire(ATTACHMENT_LOCK_KEY, LOCK_TTL_MS);
+  }
+  return acquired;
 }
 
 /** Release the group-attachment lock. */

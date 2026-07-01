@@ -8,13 +8,48 @@ import { getAttachedGroup, getReplyMapping, getProcessingStatus, saveProcessingS
 // When a moderator replies to a forwarded report in the group, the bot
 // captures the reply, maps it to the original user via the stored mapping,
 // and forwards the reply to the original user in private.
+//
+// Handles text, photo (+caption), document (+caption), video (+caption),
+// and voice messages from moderators.
 // ---------------------------------------------------------------------------
 
 const composer = new Composer<Ctx>();
 
-// Register on "message" to catch all group messages; gate inside the handler
-// to avoid running async checks on every message via filter().
-composer.on("message:text", async (ctx, next) => {
+/** Extract text content and media info from a message for relaying. */
+function extractReplyContent(
+  ctx: Ctx,
+): { text: string; hasMedia: boolean } | null {
+  if (ctx.message?.text?.trim()) {
+    return { text: ctx.message.text.trim(), hasMedia: false };
+  }
+  if (ctx.message?.caption?.trim()) {
+    return { text: ctx.message.caption.trim(), hasMedia: true };
+  }
+  // Non-text, non-caption message — check media type
+  if (ctx.message?.photo || ctx.message?.document || ctx.message?.video || ctx.message?.voice) {
+    return { text: "", hasMedia: true };
+  }
+  return null;
+}
+
+/** Send the reply to the original user, handling text + media combinations. */
+async function sendReplyToUser(
+  ctx: Ctx,
+  userId: number,
+  reportId: string,
+  content: { text: string; hasMedia: boolean },
+): Promise<void> {
+  const prefix = `📬 Reply from moderation team regarding report #${reportId}`;
+  const fullText = content.text
+    ? `${prefix}:\n\n${content.text}`
+    : prefix;
+
+  await ctx.api.sendMessage(userId, fullText);
+}
+
+// Register on "message" to catch all message types — text, photo, document,
+// video, voice, etc. Gate based on chat type + reply conditions inside.
+composer.on("message", async (ctx, next) => {
   const chat = ctx.chat;
   // Only process in groups/supergroups — ignore private chats
   if (!chat || chat.type === "private") {
@@ -33,8 +68,6 @@ composer.on("message:text", async (ctx, next) => {
   const replyTo = ctx.message?.reply_to_message;
   if (!replyTo) {
     // Message in the moderation group that isn't a reply — pass through
-    // to other handlers (which may be the global fallback). We do NOT
-    // reply here to avoid noise in the group.
     await next();
     return;
   }
@@ -53,29 +86,35 @@ composer.on("message:text", async (ctx, next) => {
     return;
   }
 
-  // Moderator's reply text
-  const replyText = ctx.message?.text?.trim();
-  if (!replyText) return;
-
-  // Update processing status to "responded"
-  const status = await getProcessingStatus(mapping.originalReportId);
-  if (status) {
-    await saveProcessingStatus({
-      ...status,
-      status: "responded",
-    });
+  // Extract reply content (text, caption, or media)
+  const content = extractReplyContent(ctx);
+  if (!content) {
+    // Unsupported message type — notify the group
+    await ctx.reply(
+      "⚠️ Unsupported message type. Please reply with text, a photo with caption, a document, video, or a voice message.",
+    );
+    return;
   }
 
+  // Update processing status ONLY after a successful send
   // Relay to original user
   try {
-    await ctx.api.sendMessage(
-      mapping.originalUserId,
-      `📬 Reply from moderation team regarding report #${mapping.originalReportId}:\n\n${replyText}`,
-    );
+    await sendReplyToUser(ctx, mapping.originalUserId, mapping.originalReportId, content);
+
+    // Mark as responded only after delivery confirmation
+    const status = await getProcessingStatus(mapping.originalReportId);
+    if (status) {
+      await saveProcessingStatus({
+        ...status,
+        status: "responded",
+      });
+    }
+
     // Acknowledge in the group
     await ctx.reply("✓ Reply forwarded to the user.");
   } catch {
-    // User may have blocked the bot or never started it — notify the group
+    // User may have blocked the bot or never started it — notify the group.
+    // The processing status stays as-is (not "responded") since delivery failed.
     await ctx.reply(
       "⚠️ Could not forward your reply — the user may have blocked the bot or not started it yet.",
     );

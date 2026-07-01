@@ -25,6 +25,10 @@ class TestKv {
     this.m.set(key, value);
     return Promise.resolve(true);
   }
+  expire(_key: string, _ttlMs: number): Promise<void> {
+    // In-memory test: no-op — TTL is a safety valve for production Redis crashes.
+    return Promise.resolve();
+  }
   /** Reset all stored data. */
   clear(): void {
     this.m.clear();
