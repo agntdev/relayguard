@@ -5,8 +5,11 @@ import { createBot, type BotContext } from "./toolkit/index.js";
 // The per-chat session shape (ephemeral conversation state only). Extend as the
 // bot grows. Durable domain data must NOT live here — use the toolkit's
 // persistent storage (see AGENTS.md).
+export type FlowStep = "idle" | "awaiting_report";
+
 export interface Session {
-  // example: step?: "awaiting_amount";
+  /** Current step in a multi-step flow. "idle" = no active flow. */
+  step?: FlowStep;
 }
 
 export type Ctx = BotContext<Session>;
