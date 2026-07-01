@@ -31,13 +31,27 @@ composer.on("message:text", async (ctx, next) => {
 
   // Only process replies to bot messages (the forwarded report)
   const replyTo = ctx.message?.reply_to_message;
-  if (!replyTo) return;
-  if (!replyTo.from || !replyTo.from.is_bot) return;
+  if (!replyTo) {
+    // Message in the moderation group that isn't a reply — pass through
+    // to other handlers (which may be the global fallback). We do NOT
+    // reply here to avoid noise in the group.
+    await next();
+    return;
+  }
+  if (!replyTo.from || !replyTo.from.is_bot) {
+    // Reply to a human, not a bot message — pass through
+    await next();
+    return;
+  }
 
   // Look up the reply mapping by the original forwarded message's ID
   const groupMsgId = replyTo.message_id;
   const mapping = await getReplyMapping(groupMsgId);
-  if (!mapping) return;
+  if (!mapping) {
+    // Reply to a bot message that isn't a forwarded report — pass through
+    await next();
+    return;
+  }
 
   // Moderator's reply text
   const replyText = ctx.message?.text?.trim();

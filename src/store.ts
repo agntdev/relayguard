@@ -29,6 +29,12 @@ export interface KvStore {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<void>;
   del(key: string): Promise<void>;
+  /**
+   * Atomic compare-and-set: set `key` to `value` only if the key does NOT
+   * already exist. Returns true if the key was set, false if it already existed.
+   * Used for distributed locking.
+   */
+  setnx(key: string, value: string): Promise<boolean>;
 }
 
 /** In-memory fallback (dev / no Redis). */
@@ -42,6 +48,11 @@ class MemoryKv implements KvStore {
   }
   async del(key: string): Promise<void> {
     this.m.delete(key);
+  }
+  async setnx(key: string, value: string): Promise<boolean> {
+    if (this.m.has(key)) return false;
+    this.m.set(key, value);
+    return true;
   }
 }
 
@@ -59,7 +70,7 @@ function createRedisKv(url: string): KvStore {
   const require = createRequire(import.meta.url);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ioredis: any = require("ioredis");
-  const Redis = (ioredis.default ?? ioredis.Redis ?? ioredis) as new (...a: unknown[]) => { get: Function; set: Function; del: Function };
+  const Redis = (ioredis.default ?? ioredis.Redis ?? ioredis) as new (...a: unknown[]) => { get: Function; set: Function; del: Function; setnx: Function };
   const client = new Redis(url, { maxRetriesPerRequest: null, lazyConnect: false });
   return {
     async get(key: string): Promise<string | null> {
@@ -71,6 +82,10 @@ function createRedisKv(url: string): KvStore {
     },
     async del(key: string): Promise<void> {
       await client.del(key);
+    },
+    async setnx(key: string, value: string): Promise<boolean> {
+      const result = await client.setnx(key, value);
+      return result === 1;
     },
   };
 }
@@ -140,6 +155,34 @@ export interface AttachedGroup {
 }
 
 const GROUP_ATTACHMENT_KEY = "group_attachment";
+
+const ATTACHMENT_LOCK_KEY = "lock:group_attachment";
+const LOCK_TTL_MS = 10_000; // 10 seconds — ample for a single KV write
+
+/**
+ * Try to acquire the group-attachment lock atomically.
+ * Returns true if acquired, false if held by another caller.
+ */
+export async function lockAttachment(ownerId: string): Promise<boolean> {
+  return kv().setnx(ATTACHMENT_LOCK_KEY, ownerId);
+}
+
+/** Release the group-attachment lock. */
+export async function unlockAttachment(): Promise<void> {
+  await kv().del(ATTACHMENT_LOCK_KEY);
+}
+
+/**
+ * Try to acquire the lock with a retry loop (best-effort).
+ * Returns true if acquired, false if contention persists after `retries` attempts.
+ */
+export async function lockAttachmentWithRetry(ownerId: string, retries = 5, delayMs = 200): Promise<boolean> {
+  for (let i = 0; i < retries; i++) {
+    if (await lockAttachment(ownerId)) return true;
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return false;
+}
 
 export async function saveAttachedGroup(g: AttachedGroup): Promise<void> {
   await kv().set(GROUP_ATTACHMENT_KEY, JSON.stringify(g));
