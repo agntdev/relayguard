@@ -30,6 +30,12 @@ export interface KvStore {
   set(key: string, value: string): Promise<void>;
   del(key: string): Promise<void>;
   /**
+   * Atomic increment: increment the numeric value at `key` by 1 and return the
+   * new value. If the key does not exist, it is set to 1 before returning.
+   * Used for counters that must be atomic across concurrent callers.
+   */
+  incr(key: string): Promise<number>;
+  /**
    * Atomic compare-and-set: set `key` to `value` only if the key does NOT
    * already exist. Returns true if the key was set, false if it already existed.
    * Used for distributed locking.
@@ -65,6 +71,12 @@ class MemoryKv implements KvStore {
     this.m.delete(key);
     this.exp.delete(key);
   }
+  async incr(key: string): Promise<number> {
+    const raw = this.m.get(key);
+    const next = (raw ? Number(raw) : 0) + 1;
+    this.m.set(key, String(next));
+    return next;
+  }
   async setnx(key: string, value: string): Promise<boolean> {
     if (this.m.has(key)) return false;
     this.m.set(key, value);
@@ -91,7 +103,7 @@ function createRedisKv(url: string): KvStore {
   const require = createRequire(import.meta.url);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ioredis: any = require("ioredis");
-  const Redis = (ioredis.default ?? ioredis.Redis ?? ioredis) as new (...a: unknown[]) => { get: Function; set: Function; del: Function; setnx: Function; pexpire: Function };
+  const Redis = (ioredis.default ?? ioredis.Redis ?? ioredis) as new (...a: unknown[]) => { get: Function; set: Function; del: Function; incr: Function; setnx: Function; pexpire: Function };
   const client = new Redis(url, { maxRetriesPerRequest: null, lazyConnect: false });
   return {
     async get(key: string): Promise<string | null> {
@@ -103,6 +115,10 @@ function createRedisKv(url: string): KvStore {
     },
     async del(key: string): Promise<void> {
       await client.del(key);
+    },
+    async incr(key: string): Promise<number> {
+      const result = await client.incr(key);
+      return result as number;
     },
     async setnx(key: string, value: string): Promise<boolean> {
       const result = await client.setnx(key, value);
@@ -128,12 +144,9 @@ export interface UserReport {
   mediaReferences: string[];
 }
 
-/** Generate a monotonic report ID. */
+/** Generate a monotonic report ID using an atomic counter. */
 export async function nextReportId(): Promise<string> {
-  const k = "report_id_counter";
-  const raw = await kv().get(k);
-  const next = (raw ? Number(raw) : 0) + 1;
-  await kv().set(k, String(next));
+  const next = await kv().incr("report_id_counter");
   return `R${String(next).padStart(6, "0")}`;
 }
 

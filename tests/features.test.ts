@@ -20,6 +20,12 @@ class TestKv {
     this.m.delete(key);
     return Promise.resolve();
   }
+  incr(key: string): Promise<number> {
+    const raw = this.m.get(key);
+    const next = (raw ? Number(raw) : 0) + 1;
+    this.m.set(key, String(next));
+    return Promise.resolve(next);
+  }
   setnx(key: string, value: string): Promise<boolean> {
     if (this.m.has(key)) return Promise.resolve(false);
     this.m.set(key, value);
