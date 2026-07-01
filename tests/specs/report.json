@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Submit Report button shows prompt when no group attached",
+    "steps": [
+      {
+        "send": { "callback": "submit_report:start" },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": { "text": "⚠️ Report submission isn't available yet — no moderation group is configured." }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Cancel button exits report flow",
+    "steps": [
+      {
+        "send": { "callback": "submit_report:cancel" },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": { "text": "Report cancelled. Tap /start to open the menu." }
+          }
+        ]
+      }
+    ]
+  }
+]

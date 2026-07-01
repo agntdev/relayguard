@@ -1,0 +1,30 @@
+[
+  {
+    "name": "/attach fails in private chat",
+    "steps": [
+      {
+        "send": { "text": "/attach" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": { "text": "⚠️ /attach must be used in a group where you're an admin." }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "/detach fails in private chat",
+    "steps": [
+      {
+        "send": { "text": "/detach" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": { "text": "⚠️ /detach must be used in the moderation group." }
+          }
+        ]
+      }
+    ]
+  }
+]

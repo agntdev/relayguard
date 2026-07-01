@@ -9,8 +9,11 @@ async function main() {
   }
   const bot = await buildBot(token);
   // Publish the "/" command list to Telegram (discoverability). A button-first
-  // bot exposes only /start + /help; everything else is reached via menu buttons.
-  await setDefaultCommands(bot);
+  // bot exposes only /start + /help; /attach and /detach are group admin commands.
+  await setDefaultCommands(bot, [
+    { command: "attach", description: "Attach this group as moderation group" },
+    { command: "detach", description: "Detach this moderation group" },
+  ]);
   bot.start();
 }
 
