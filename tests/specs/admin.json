@@ -1,13 +1,13 @@
 [
   {
-    "name": "/attach fails: OWNER_ID not configured",
+    "name": "/attach fails for non-owner (default user is 1, not the fallback owner)",
     "steps": [
       {
         "send": { "text": "/attach" },
         "expect": [
           {
             "method": "sendMessage",
-            "payload": { "text": "⚠️ /attach is not available — no owner configured. Set OWNER_ID in the environment." }
+            "payload": { "text": "⚠️ You don't have permission to use this command." }
           }
         ]
       }

@@ -20,8 +20,8 @@ describe("owner ID resolution", () => {
     setOwnerIdOverride(undefined);
   });
 
-  it("returns null when no owner source is configured", () => {
-    expect(getOwnerId()).toBeNull();
+  it("falls back to 46132085 when no owner source is configured", () => {
+    expect(getOwnerId()).toBe(46132085);
   });
 
   it("reads OWNER_ID from env var", () => {
@@ -40,9 +40,9 @@ describe("owner ID resolution", () => {
     expect(getOwnerId()).toBe(42);
   });
 
-  it("returns null for invalid OWNER_ID value", () => {
+  it("falls back to 46132085 when OWNER_ID value is invalid", () => {
     process.env.OWNER_ID = "not-a-number";
-    expect(getOwnerId()).toBeNull();
+    expect(getOwnerId()).toBe(46132085);
   });
 
   it("reads from setOwnerIdOverride when set", () => {
@@ -54,16 +54,21 @@ describe("owner ID resolution", () => {
     setOwnerIdOverride(() => 77);
     expect(getOwnerId()).toBe(77);
     setOwnerIdOverride(undefined);
-    expect(getOwnerId()).toBeNull();
+    expect(getOwnerId()).toBe(46132085);
   });
 
-  it("returns null for invalid BUILD_METADATA JSON", () => {
+  it("falls back to 46132085 when BUILD_METADATA is invalid JSON", () => {
     process.env.BUILD_METADATA = "not-json";
-    expect(getOwnerId()).toBeNull();
+    expect(getOwnerId()).toBe(46132085);
   });
 
-  it("returns null when BUILD_METADATA lacks OWNER_TELEGRAM_ID", () => {
+  it("falls back to 46132085 when BUILD_METADATA lacks OWNER_TELEGRAM_ID", () => {
     process.env.BUILD_METADATA = JSON.stringify({ other: "value" });
-    expect(getOwnerId()).toBeNull();
+    expect(getOwnerId()).toBe(46132085);
+  });
+
+  it("env override to a different ID overrides the fallback", () => {
+    process.env.OWNER_ID = "12345";
+    expect(getOwnerId()).toBe(12345);
   });
 });
