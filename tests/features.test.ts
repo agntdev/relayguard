@@ -176,14 +176,11 @@ describe("admin commands", () => {
     kv = new TestKv();
     _setKv(kv);
     setCheckIsAdmin(async (_ctx: Ctx) => true);
-    // Inject owner ID via override so the bot thinks user 1 is the owner.
-    setOwnerIdOverride(() => 1);
   });
 
   afterEach(() => {
     _resetStore();
     setCheckIsAdmin(undefined);
-    setOwnerIdOverride(undefined);
     kv.clear();
   });
 
@@ -196,38 +193,6 @@ describe("admin commands", () => {
             send: { text: "/attach" },
             expect: [
               { method: "sendMessage", payload: { text: "⚠️ /attach must be used in a group." } },
-            ],
-          },
-        ],
-      }),
-    ]);
-    expect(suite.failed).toBe(0);
-  });
-
-  it("/attach fails with permission denied when sender is not the owner", async () => {
-    // Owner is user 1 (from beforeEach), but sender in this group update is 99 — denied.
-    setOwnerIdOverride(() => 1);
-
-    const suite = await runSpecs(() => buildBot("test"), [
-      parseBotSpec({
-        name: "attach not owner",
-        steps: [
-          {
-            send: {
-              update: {
-                update_id: 1,
-                message: {
-                  message_id: 1,
-                  date: 0,
-                  chat: { id: -100123, type: "group", title: "Test Group" },
-                  from: { id: 99, is_bot: false, first_name: "User" },
-                  text: "/attach",
-                  entities: [{ type: "bot_command" as const, offset: 0, length: 7 }],
-                },
-              },
-            },
-            expect: [
-              { method: "sendMessage", payload: { text: "⚠️ You don't have permission to use this command." } },
             ],
           },
         ],
@@ -258,7 +223,6 @@ describe("admin commands", () => {
       parseBotSpec({
         name: "detach with no group",
         steps: [
-          // Send /detach from a group chat (raw update)
           {
             send: {
               update: {
@@ -284,10 +248,7 @@ describe("admin commands", () => {
   });
 
   it("non-admin cannot attach group", async () => {
-    // Override checkIsAdmin to return false for this test
     setCheckIsAdmin(async () => false);
-    // Set owner to match the sender (99) so it passes the owner check
-    setOwnerIdOverride(() => 99);
 
     const suite = await runSpecs(() => buildBot("test"), [
       parseBotSpec({
@@ -318,9 +279,6 @@ describe("admin commands", () => {
   });
 
   it("/attach works from a group when no group is currently attached", async () => {
-    // Set owner to match the sender (99)
-    setOwnerIdOverride(() => 99);
-
     const suite = await runSpecs(() => buildBot("test"), [
       parseBotSpec({
         name: "attach group",
@@ -347,78 +305,6 @@ describe("admin commands", () => {
       }),
     ]);
     expect(suite.failed).toBe(0);
-  });
-
-  it("/attach is enabled when OWNER_ID is provided via env var", async () => {
-    // Use env var resolution instead of the test override
-    setOwnerIdOverride(undefined);
-    process.env.OWNER_ID = "99";
-    try {
-      const suite = await runSpecs(() => buildBot("test"), [
-        parseBotSpec({
-          name: "attach via env",
-          steps: [
-            {
-              send: {
-                update: {
-                  update_id: 1,
-                  message: {
-                    message_id: 1,
-                    date: 0,
-                    chat: { id: -100123, type: "group", title: "Test Group" },
-                    from: { id: 99, is_bot: false, first_name: "Admin" },
-                    text: "/attach",
-                    entities: [{ type: "bot_command" as const, offset: 0, length: 7 }],
-                  },
-                },
-              },
-              expect: [
-                { method: "sendMessage", payload: { text: "✓ This group is now set as the moderation group. Reports will be forwarded here." } },
-              ],
-            },
-          ],
-        }),
-      ]);
-      expect(suite.failed).toBe(0);
-    } finally {
-      delete process.env.OWNER_ID;
-    }
-  });
-
-  it("/attach is enabled when BUILD_METADATA provides OWNER_TELEGRAM_ID", async () => {
-    // Use build metadata resolution instead of the test override
-    setOwnerIdOverride(undefined);
-    process.env.BUILD_METADATA = JSON.stringify({ OWNER_TELEGRAM_ID: "99" });
-    try {
-      const suite = await runSpecs(() => buildBot("test"), [
-        parseBotSpec({
-          name: "attach via build metadata",
-          steps: [
-            {
-              send: {
-                update: {
-                  update_id: 1,
-                  message: {
-                    message_id: 1,
-                    date: 0,
-                    chat: { id: -100123, type: "group", title: "Test Group" },
-                    from: { id: 99, is_bot: false, first_name: "Admin" },
-                    text: "/attach",
-                    entities: [{ type: "bot_command" as const, offset: 0, length: 7 }],
-                  },
-                },
-              },
-              expect: [
-                { method: "sendMessage", payload: { text: "✓ This group is now set as the moderation group. Reports will be forwarded here." } },
-              ],
-            },
-          ],
-        }),
-      ]);
-      expect(suite.failed).toBe(0);
-    } finally {
-      delete process.env.BUILD_METADATA;
-    }
   });
 });
 
