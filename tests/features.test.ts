@@ -5,6 +5,7 @@ import { setCheckIsAdmin } from "../src/permissions.js";
 import { _resetStore, _setKv } from "../src/store.js";
 import { setNow } from "../src/clock.js";
 import { setTriage } from "../src/triage.js";
+import { setOwnerIdOverride } from "../src/owner.js";
 
 /** A fake KV store for testing. */
 class TestKv {
@@ -175,15 +176,14 @@ describe("admin commands", () => {
     kv = new TestKv();
     _setKv(kv);
     setCheckIsAdmin(async (_ctx: Ctx) => true);
-    // Set OWNER_ID so /attach recognizes the test user (default id=1) as owner.
-    // Tests that use raw updates with a different userId override this inline.
-    process.env.OWNER_ID = "1";
+    // Inject owner ID via override so the bot thinks user 1 is the owner.
+    setOwnerIdOverride(() => 1);
   });
 
   afterEach(() => {
     _resetStore();
     setCheckIsAdmin(undefined);
-    delete process.env.OWNER_ID;
+    setOwnerIdOverride(undefined);
     kv.clear();
   });
 
@@ -205,9 +205,8 @@ describe("admin commands", () => {
   });
 
   it("/attach fails with permission denied when sender is not the owner", async () => {
-    // OWNER_ID is set to "1" (the default user id for text updates) via beforeEach,
-    // but the sender in this group update is 99 — they should be denied.
-    process.env.OWNER_ID = "1";
+    // Owner is user 1 (from beforeEach), but sender in this group update is 99 — denied.
+    setOwnerIdOverride(() => 1);
 
     const suite = await runSpecs(() => buildBot("test"), [
       parseBotSpec({
@@ -287,8 +286,8 @@ describe("admin commands", () => {
   it("non-admin cannot attach group", async () => {
     // Override checkIsAdmin to return false for this test
     setCheckIsAdmin(async () => false);
-    // Set OWNER_ID to match the sender (99) so it passes the owner check
-    process.env.OWNER_ID = "99";
+    // Set owner to match the sender (99) so it passes the owner check
+    setOwnerIdOverride(() => 99);
 
     const suite = await runSpecs(() => buildBot("test"), [
       parseBotSpec({
@@ -319,8 +318,8 @@ describe("admin commands", () => {
   });
 
   it("/attach works from a group when no group is currently attached", async () => {
-    // Set OWNER_ID to match the sender (99)
-    process.env.OWNER_ID = "99";
+    // Set owner to match the sender (99)
+    setOwnerIdOverride(() => 99);
 
     const suite = await runSpecs(() => buildBot("test"), [
       parseBotSpec({
@@ -348,6 +347,78 @@ describe("admin commands", () => {
       }),
     ]);
     expect(suite.failed).toBe(0);
+  });
+
+  it("/attach is enabled when OWNER_ID is provided via env var", async () => {
+    // Use env var resolution instead of the test override
+    setOwnerIdOverride(undefined);
+    process.env.OWNER_ID = "99";
+    try {
+      const suite = await runSpecs(() => buildBot("test"), [
+        parseBotSpec({
+          name: "attach via env",
+          steps: [
+            {
+              send: {
+                update: {
+                  update_id: 1,
+                  message: {
+                    message_id: 1,
+                    date: 0,
+                    chat: { id: -100123, type: "group", title: "Test Group" },
+                    from: { id: 99, is_bot: false, first_name: "Admin" },
+                    text: "/attach",
+                    entities: [{ type: "bot_command" as const, offset: 0, length: 7 }],
+                  },
+                },
+              },
+              expect: [
+                { method: "sendMessage", payload: { text: "✓ This group is now set as the moderation group. Reports will be forwarded here." } },
+              ],
+            },
+          ],
+        }),
+      ]);
+      expect(suite.failed).toBe(0);
+    } finally {
+      delete process.env.OWNER_ID;
+    }
+  });
+
+  it("/attach is enabled when BUILD_METADATA provides OWNER_TELEGRAM_ID", async () => {
+    // Use build metadata resolution instead of the test override
+    setOwnerIdOverride(undefined);
+    process.env.BUILD_METADATA = JSON.stringify({ OWNER_TELEGRAM_ID: "99" });
+    try {
+      const suite = await runSpecs(() => buildBot("test"), [
+        parseBotSpec({
+          name: "attach via build metadata",
+          steps: [
+            {
+              send: {
+                update: {
+                  update_id: 1,
+                  message: {
+                    message_id: 1,
+                    date: 0,
+                    chat: { id: -100123, type: "group", title: "Test Group" },
+                    from: { id: 99, is_bot: false, first_name: "Admin" },
+                    text: "/attach",
+                    entities: [{ type: "bot_command" as const, offset: 0, length: 7 }],
+                  },
+                },
+              },
+              expect: [
+                { method: "sendMessage", payload: { text: "✓ This group is now set as the moderation group. Reports will be forwarded here." } },
+              ],
+            },
+          ],
+        }),
+      ]);
+      expect(suite.failed).toBe(0);
+    } finally {
+      delete process.env.BUILD_METADATA;
+    }
   });
 });
 

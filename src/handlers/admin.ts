@@ -9,20 +9,13 @@ import {
   unlockAttachment,
 } from "../store.js";
 import { isAdmin } from "../permissions.js";
+import { getOwnerId } from "../owner.js";
 
 // ---------------------------------------------------------------------------
 // Group attachment — owner-only via OWNER_ID env var / detachment — admin-only
 // ---------------------------------------------------------------------------
 
 const composer = new Composer<Ctx>();
-
-/** Parse OWNER_ID from env — returns null if unset or not a number. */
-function getOwnerId(): number | null {
-  const raw = process.env.OWNER_ID;
-  if (!raw) return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
-}
 
 function logDenied(cmd: string, ctx: Ctx, reason: string): void {
   console.warn(`[admin] DENIED ${cmd}: user ${ctx.from?.id ?? "?"} in chat ${ctx.chat?.id ?? "?"} — ${reason}`);
