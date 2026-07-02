@@ -9,10 +9,9 @@ import {
   unlockAttachment,
 } from "../store.js";
 import { isAdmin } from "../permissions.js";
-import { getOwnerId } from "../owner.js";
 
 // ---------------------------------------------------------------------------
-// Group attachment — owner-only via OWNER_ID env var / detachment — admin-only
+// Group attachment / detachment — admin-only
 // ---------------------------------------------------------------------------
 
 const composer = new Composer<Ctx>();
@@ -21,21 +20,8 @@ function logDenied(cmd: string, ctx: Ctx, reason: string): void {
   console.warn(`[admin] DENIED ${cmd}: user ${ctx.from?.id ?? "?"} in chat ${ctx.chat?.id ?? "?"} — ${reason}`);
 }
 
-// --- /attach (owner-only) ---
+// --- /attach (admin-only) ---
 composer.command("attach", async (ctx) => {
-  const ownerId = getOwnerId();
-  if (!ownerId) {
-    logDenied("/attach", ctx, "OWNER_ID not configured (override returned null)");
-    await ctx.reply("⚠️ /attach is not available — no owner configured.");
-    return;
-  }
-
-  if (ctx.from?.id !== ownerId) {
-    logDenied("/attach", ctx, "sender is not the owner");
-    await ctx.reply("⚠️ You don't have permission to use this command.");
-    return;
-  }
-
   const chat = ctx.chat;
   if (!chat || chat.type === "private") {
     await ctx.reply("⚠️ /attach must be used in a group.");
@@ -43,6 +29,7 @@ composer.command("attach", async (ctx) => {
   }
 
   if (!(await isAdmin(ctx))) {
+    logDenied("/attach", ctx, "sender is not an admin");
     await ctx.reply("⚠️ Only group admins can attach the moderation group.");
     return;
   }

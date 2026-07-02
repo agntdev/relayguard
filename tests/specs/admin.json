@@ -1,13 +1,13 @@
 [
   {
-    "name": "/attach fails for non-owner (default user is 1, not the fallback owner)",
+    "name": "/attach fails in private chat (must be in a group)",
     "steps": [
       {
         "send": { "text": "/attach" },
         "expect": [
           {
             "method": "sendMessage",
-            "payload": { "text": "⚠️ You don't have permission to use this command." }
+            "payload": { "text": "⚠️ /attach must be used in a group." }
           }
         ]
       }
