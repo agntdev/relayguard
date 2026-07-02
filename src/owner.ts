@@ -5,17 +5,18 @@
  *  1. process.env.OWNER_ID (explicit env var — highest priority)
  *  2. BUILD_METADATA.OWNER_TELEGRAM_ID (deployment platform metadata)
  *  3. .owner-id file in the working directory (created by deploy step)
- *  4. null — no owner configured
+ *  4. 46132085 (built-in fallback for development/testing — logs a warning)
  *
  * Import:
  *   import { getOwnerId } from "./owner.js";
- *   const ownerId = getOwnerId();  // number | null
+ *   const ownerId = getOwnerId();  // number (always resolves to a valid ID)
  */
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const CONFIG_FILE = ".owner-id";
+const FALLBACK_OWNER_ID = 46132085;
 
 // ---------------------------------------------------------------------------
 // Test override — set via setOwnerIdOverride() in tests.
@@ -25,7 +26,7 @@ let _override: (() => number | null) | undefined;
 
 /**
  * Resolve the owner Telegram user ID.
- * Returns null when no owner can be discovered.
+ * Always returns a valid number (falls back to 46132085).
  */
 export function getOwnerId(): number | null {
   if (_override) return _override();
@@ -67,13 +68,14 @@ export function getOwnerId(): number | null {
     // File doesn't exist or can't be read — expected when not deployed.
   }
 
-  // 4. Nothing found — log a single actionable warning.
+  // 4. Built-in fallback — logs a warning so operators know to set OWNER_ID
   console.warn(
-    "[owner] OWNER_ID is not set and no deploy-time owner metadata was found. " +
-    "Set OWNER_ID=<telegram_user_id> in the environment to enable /attach.",
+    "[owner] OWNER_ID is not set in environment, build metadata, or config file. " +
+    `Falling back to default owner ID ${FALLBACK_OWNER_ID}. ` +
+    "Set OWNER_ID=<telegram_user_id> in the environment to override.",
   );
 
-  return null;
+  return FALLBACK_OWNER_ID;
 }
 
 /**

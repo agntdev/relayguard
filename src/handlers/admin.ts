@@ -25,8 +25,8 @@ function logDenied(cmd: string, ctx: Ctx, reason: string): void {
 composer.command("attach", async (ctx) => {
   const ownerId = getOwnerId();
   if (!ownerId) {
-    logDenied("/attach", ctx, "OWNER_ID not configured");
-    await ctx.reply("⚠️ /attach is not available — no owner configured. Set OWNER_ID in the environment.");
+    logDenied("/attach", ctx, "OWNER_ID not configured (override returned null)");
+    await ctx.reply("⚠️ /attach is not available — no owner configured.");
     return;
   }
 
